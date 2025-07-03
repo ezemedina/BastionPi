@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Bootstrap CSS desde la carpeta static -->
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <title>Portal de Conexión</title>
+    <style>
+        /* Estilos para el contenedor del portal */
+        .portal-container {
+            width: 470px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .portal-container .text-content {
+            width: 60%;
+            text-align: justify;
+            max-width: 260px;
+        }
+        .portal-container .qr-content {
+            width: 40%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .portal-container img {
+            width: 200px;
+            height: 200px;
+        }
+        .highlight {
+            color: #3498db; /* Azul para resaltar (color de la barra de progreso) */
+            font-weight: lighter; /* Tipografía lighter */
+        }
+    </style>
+</head>
+<body class="p-1" style="width: 479px !important;">
+    <!-- Barra superior -->
+    <div class="d-flex justify-content-between">
+        <p class="fw-lighter" id="networkIp">ETH: Desconectado</p>
+        <p class="fw-lighter" id="currentDateTime"></p>
+        <p class="fw-lighter" id="vpnIp">VPN: Desconectado</p>
+    </div>
+
+    <!-- Contenedor del portal -->
+    <div class="portal-container p-0">
+        <!-- Texto a la izquierda -->
+        <div class="text-content">
+            <p class="fw-lighter mb-2">Para configurar la conexión WiFi de la Raspberry Pi, escanee el código QR o visite manualmente la siguiente dirección:</p>
+            <p class="fw-lighter mb-2"><span class="highlight">http://192.168.4.1:5000</span></p>
+            <p class="fw-lighter mb-1">Una vez en el portal, seleccione una red WiFi disponible e ingrese la contraseña correspondiente.</p>
+            <p class="fw-lighter mb-1">Después de conectarse a una red WiFi, el dispositivo se conectará automáticamente a la red seleccionada.</p>
+        </div>
+        <!-- QR a la derecha -->
+        <div class="qr-content">
+            <img src="{{ url_for('qr.get_qr', data='http://192.168.4.1:5000') }}" alt="QR Code">
+        </div>
+    </div>
+
+    <!-- Script para la fecha y hora -->
+    <script>
+        // Función para formatear la fecha y hora en el formato "MMM-DD HH:mm"
+        function getFormattedDateTime() {
+            const now = new Date();
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const month = months[now.getMonth()]; // Obtiene el nombre del mes
+            const day = String(now.getDate()).padStart(2, '0'); // Día con dos dígitos
+            const hours = String(now.getHours()).padStart(2, '0'); // Horas con dos dígitos
+            const minutes = String(now.getMinutes()).padStart(2, '0'); // Minutos con dos dígitos
+            return `${month}-${day} ${hours}:${minutes}`;
+        }
+
+        // Función para actualizar el elemento del DOM con la fecha y hora actual
+        function updateDateTime() {
+            const dateTimeElement = document.getElementById("currentDateTime");
+            if (dateTimeElement) {
+                dateTimeElement.textContent = getFormattedDateTime();
+            }
+        }
+
+        // Actualizar la fecha y hora cada minuto (60,000 milisegundos)
+        setInterval(updateDateTime, 1000);
+
+        // Llamar a la función una vez al cargar la página para establecer la fecha y hora inicial
+        updateDateTime();
+    </script>
+
+    <!-- Script para verificar la conexión a Internet -->
+    <script>
+        const API_BASE_URL = `http://${window.location.hostname}:5000`; // URL base de la API
+
+        async function checkInternetConnection() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/status/network`);
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                const networkData = await response.json();
+
+                // Si hay conexión Ethernet activa, detener el hotspot y redirigir
+                if (networkData.internet) {
+                    await fetch(`${API_BASE_URL}/api/hotspot/stop`, { method: "POST" });
+                    window.location.href = "/raspi_display";
+                }
+            } catch (error) {
+                console.error("Error verificando la conexión a Internet:", error);
+            }
+        }
+
+        // Verificar la conexión a Internet cada 5 segundos
+        setInterval(checkInternetConnection, 5000);
+    </script>
+
+    <!-- Script de Bootstrap desde la carpeta static -->
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>

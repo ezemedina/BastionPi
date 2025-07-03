@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Bootstrap CSS local -->
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <!-- Chart.js local -->
+    <script src="{{ url_for('static', filename='js/chart.umd.js') }}"></script>
+    <!-- Material Icons local -->
+    <link href="{{ url_for('static', filename='fonts/MaterialIcons-Regular.woff2') }}" rel="stylesheet">
+    <title>Estado de Red y Servicios</title>
+    <!-- Estilos locales -->
+    <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet">
+</head>
+<body class="p-1" style="width: 479px !important;">
+    <!-- Barra superior -->
+    <div class="d-flex justify-content-between">
+        <p class="fw-lighter" id="networkIp">ETH: Desconectado</p>
+        <p class="fw-lighter" id="currentDateTime"></p>
+        <p class="fw-lighter" id="vpnIp">VPN: Desconectado</p>
+    </div>
+
+    <div class="toast-container position-fixed top-0 end-0 p-3"> <!-- Posición derecha -->
+        <div id="apiErrorToast" class="toast align-items-center text-bg-danger border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="material-icons me-2">warning</i> <!-- Ícono de advertencia -->
+                    No se pudo conectar con la API.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de advertencia de falta de conexión a Internet -->
+    <div class="modal fade" id="noInternetModal" tabindex="-1" aria-labelledby="noInternetModalLabel" aria-hidden="true" style="width: 460px !important;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="noInternetModalLabel">Advertencia</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>No se detecta conexión a Internet. El dispositivo se pondrá en modo hotspot y será redirigido automáticamente.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contenedores de gráficos -->
+    <div class="container-fluid transaction active" id="container1">
+        <div class="chart-container">
+            <canvas id="cpuChart"></canvas>
+        </div>
+    </div>
+    <div class="container-fluid transaction" id="container2">
+        <div class="chart-container">
+            <canvas id="memoryChart"></canvas>
+        </div>
+    </div>
+    <div class="container-fluid transaction" id="container3">
+        <div class="chart-container">
+            <canvas id="diskChart"></canvas>
+        </div>
+    </div>
+    <div class="container-fluid transaction" id="container4">
+        <div class="chart-container" style="height: 264px; overflow: hidden;"> <!-- Deshabilitar scroll -->
+            <canvas id="networkChart"></canvas>
+        </div>
+    </div>
+    <div class="container-fluid transaction" id="container5">
+        <div class="network-cards">
+            <!-- Ethernet (arriba, izquierda) -->
+            <div class="network-card">
+                <i id="ethIcon" class="material-icons network-icon">settings_ethernet</i>
+                <p class="mb-1"><strong>Ethernet</strong></p>
+                <p class="mb-1" id="ethStatus">IP: Cargando...</p>
+            </div>
+            <!-- WiFi (arriba, derecha) -->
+            <div class="network-card">
+                <i id="wifiIcon" class="material-icons network-icon">wifi_off</i>
+                <p class="mb-1"><strong>WiFi</strong></p>
+                <p class="mb-1" id="wifiStatus">IP: Cargando...</p>
+                <p class="mb-1" id="wifiSSID">SSID: Cargando...</p>
+            </div>
+            <!-- Internet (abajo, izquierda) -->
+            <div class="network-card">
+                <i id="internetIcon" class="material-icons network-icon">cloud</i>
+                <p class="mb-1"><strong>Internet</strong></p>
+                <p class="mb-1" id="internetStatus">Cargando...</p>
+            </div>
+            <!-- VPN (abajo, derecha) -->
+            <div class="network-card">
+                <i id="vpnIcon" class="material-icons network-icon">security</i>
+                <p class="mb-1"><strong>VPN</strong></p>
+                <p class="mb-1" id="vpnStatus">IP: Cargando...</p>
+            </div>
+        </div>
+    </div>
+    <div class="container-fluid transaction" id="container6">
+        <h4 class="mb-2">Estado de Servicios</h4>
+        <div class="services-grid">
+            <!-- Portainer -->
+            <div class="service-card" id="portainer-service" onclick="openServiceActionModal('portainer')">
+                <i class="material-icons service-icon stopped">construction</i>
+                <span>Portainer</span>
+            </div>
+            <!-- Docmost -->
+            <div class="service-card" id="docmost-service" onclick="openServiceActionModal('docmost')">
+                <i class="material-icons service-icon stopped">description</i>
+                <span>Docmost</span>
+            </div>
+            <!-- Guacamole -->
+            <div class="service-card" id="guacamole-service" onclick="openServiceActionModal('guacamole')">
+                <i class="material-icons service-icon stopped">desktop_windows</i>
+                <span>Guacamole</span>
+            </div>
+            <!-- Nginx Proxy Manager -->
+            <div class="service-card" id="nginx_proxy_manager-service" onclick="openServiceActionModal('nginx_proxy_manager')">
+                <i class="material-icons service-icon stopped">dns</i>
+                <span>Nginx Proxy</span>
+            </div>
+            <!-- Docker -->
+            <div class="service-card" id="docker-service" onclick="openServiceActionModal('docker')">
+                <i class="material-icons service-icon stopped">directions_boat</i>
+                <span>Docker</span>
+            </div>
+            <!-- Cockpit -->
+            <div class="service-card" id="cockpit-service" onclick="openServiceActionModal('cockpit')">
+                <i class="material-icons service-icon stopped">build</i>
+                <span>Cockpit</span>
+            </div>
+        </div>
+    </div>
+    <div class="container-fluid transaction" id="container7">
+        <div class="power-actions d-flex justify-content-between">
+            <!-- Card para Apagar -->
+            <div class="power-card shutdown d-flex flex-column align-items-center justify-content-center" data-bs-toggle="modal" data-bs-target="#shutdownModal" style="height: 264px;">
+                <i class="material-icons">power_settings_new</i>
+                <p class="mt-2">Apagar</p>
+            </div>
+            <!-- Card para Reiniciar -->
+            <div class="power-card reboot d-flex flex-column align-items-center justify-content-center" data-bs-toggle="modal" data-bs-target="#rebootModal" style="height: 264px;">
+                <i class="material-icons">restart_alt</i>
+                <p class="mt-2">Reiniciar</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de confirmación para Apagar -->
+    <div class="modal fade custom-modal" id="shutdownModal" tabindex="-1" aria-labelledby="shutdownModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-sm"> <!-- Tamaño pequeño (modal-sm) -->
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="shutdownModalLabel">Confirmar Apagado</h5>
+                    <!-- Eliminar el botón de cierre -->
+                </div>
+                <div class="modal-body">
+                    <p>¿Está seguro de que desea apagar el sistema?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger" onclick="powerAction('shutdown')">Sí</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de confirmación para Reiniciar -->
+    <div class="modal fade custom-modal" id="rebootModal" tabindex="-1" aria-labelledby="rebootModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-sm"> <!-- Tamaño pequeño (modal-sm) -->
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="rebootModalLabel">Confirmar Reinicio</h5>
+                    <!-- Eliminar el botón de cierre -->
+                </div>
+                <div class="modal-body">
+                    <p>¿Está seguro de que desea reiniciar el sistema?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-warning" onclick="powerAction('reboot')">Sí</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para detener o reiniciar servicios -->
+    <div class="modal fade custom-modal" id="serviceActionModal" tabindex="-1" aria-labelledby="serviceActionModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="serviceActionModalLabel">Acción sobre el servicio</h5>
+                </div>
+                <div class="modal-body">
+                    <p>Seleccione la acción que desea realizar:</p>
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-success" onclick="handleServiceAction('start')">Iniciar</button>
+                        <button type="button" class="btn btn-warning" onclick="handleServiceAction('restart')">Reiniciar</button>
+                        <button type="button" class="btn btn-danger" onclick="handleServiceAction('stop')">Detener</button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Barra de progreso -->
+    <div class="progress-wrapper p-1" style="width: 479px !important;">
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+    </div>
+    
+    <!-- Bootstrap JS local -->
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    <!-- Scripts de la aplicación -->
+    <script>
+        const API_BASE_URL = `http://${window.location.hostname}:5000`; // URL base de la API
+
+        // Limpiar localStorage al cargar la página
+        localStorage.removeItem("cpuData");
+        localStorage.removeItem("memoryData");
+        localStorage.removeItem("diskData");
+        localStorage.removeItem("networkData");
+
+        let selectedService = null;
+
+        // Función para ejecutar acciones de power (shutdown o reboot)
+        async function powerAction(action) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/power/${action}`, {
+                    method: "POST",
+                });
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                const result = await response.json();
+            } catch (error) {
+                console.error(`Error ejecutando la acción ${action}:`, error);
+            }
+        }
+
+        // Función para verificar la conexión a la API
+        async function checkApiConnection() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/status/system`);
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                // Si la API responde, ocultar el toast
+                const toast = new bootstrap.Toast(document.getElementById('apiErrorToast'));
+                toast.hide();
+            } catch (error) {
+                // Si la API no responde, mostrar el toast
+                const toast = new bootstrap.Toast(document.getElementById('apiErrorToast'));
+                toast.show();
+            }
+        }
+
+        // Verificar la conexión a la API cada 10 segundos
+        setInterval(checkApiConnection, 5000);
+
+        // Llamar a la función una vez al cargar la página
+        checkApiConnection();
+
+        // Lista de servicios
+        const DOCKER_SERVICES = ["portainer", "docmost", "guacamole", "nginx_proxy_manager"];
+        const SYSTEM_SERVICES = ["docker", "cockpit"];
+        const ALL_SERVICES = [...DOCKER_SERVICES, ...SYSTEM_SERVICES];
+
+        // Función para obtener el estado de un servicio
+        async function fetchServiceStatus(serviceName) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/status/${serviceName}`);
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                const data = await response.json();
+                return data.status;
+            } catch (error) {
+                console.error(`Error fetching status for ${serviceName}:`, error);
+                return "stopped"; // Si hay un error, asumimos que el servicio está detenido
+            }
+        }
+
+        // Función para actualizar el estado de un servicio en la interfaz
+        function updateServiceStatus(serviceName, status) {
+            const serviceCard = document.getElementById(`${serviceName}-service`);
+            if (serviceCard) {
+                const serviceIcon = serviceCard.querySelector('.service-icon');
+                if (status === "running") {
+                    serviceIcon.classList.remove("stopped");
+                    serviceIcon.classList.add("running");
+                } else {
+                    serviceIcon.classList.remove("running");
+                    serviceIcon.classList.add("stopped");
+                }
+            }
+        }
+
+        // Función para actualizar el estado de todos los servicios
+        async function updateAllServicesStatus() {
+            for (const serviceName of ALL_SERVICES) {
+                const status = await fetchServiceStatus(serviceName);
+                updateServiceStatus(serviceName, status);
+            }
+        }
+
+        // Actualizar los servicios cada 10 segundos
+        setInterval(updateAllServicesStatus, 10000); // 10 segundos
+
+        // Llamar a la función una vez al cargar la página
+        updateAllServicesStatus();
+
+        // Función para obtener datos de la API
+        async function fetchSystemStatus() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/status/system`);
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error("Error fetching system status:", error);
+                return null;
+            }
+        }
+
+        // Función para guardar datos en el localStorage
+        function saveToLocalStorage(data) {
+            let cpuData = JSON.parse(localStorage.getItem("cpuData")) || [];
+            let memoryData = JSON.parse(localStorage.getItem("memoryData")) || [];
+            let diskData = JSON.parse(localStorage.getItem("diskData")) || [];
+            let networkData = JSON.parse(localStorage.getItem("networkData")) || [];
+
+            const timestamp = new Date().toLocaleTimeString('es-AR', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false // Formato de 24 horas
+            });
+
+            // Agregar nuevos datos
+            cpuData.push({ value: data.cpu_usage, timestamp });
+            memoryData.push({ value: data.memory.percent, timestamp });
+            diskData.push({ value: data.disks.percent, timestamp });
+            networkData.push({
+                upload: data.network.upload_speed,
+                download: data.network.download_speed,
+                timestamp
+            });
+
+            // Mantener solo los últimos 5 minutos de datos (60 muestras si es cada 5 segundos)
+            const maxDataPoints = 60;
+            if (cpuData.length > maxDataPoints) cpuData = cpuData.slice(-maxDataPoints);
+            if (memoryData.length > maxDataPoints) memoryData = memoryData.slice(-maxDataPoints);
+            if (diskData.length > maxDataPoints) diskData = diskData.slice(-maxDataPoints);
+            if (networkData.length > maxDataPoints) networkData = networkData.slice(-maxDataPoints);
+
+            // Guardar en localStorage
+            localStorage.setItem("cpuData", JSON.stringify(cpuData));
+            localStorage.setItem("memoryData", JSON.stringify(memoryData));
+            localStorage.setItem("diskData", JSON.stringify(diskData));
+            localStorage.setItem("networkData", JSON.stringify(networkData));
+        }
+
+        // Función para actualizar los gráficos
+        function updateCharts() {
+            const cpuData = JSON.parse(localStorage.getItem("cpuData")) || [];
+            const memoryData = JSON.parse(localStorage.getItem("memoryData")) || [];
+            const diskData = JSON.parse(localStorage.getItem("diskData")) || [];
+            const networkData = JSON.parse(localStorage.getItem("networkData")) || [];
+
+            const cpuValues = cpuData.map(item => item.value);
+            const cpuTimestamps = cpuData.map(item => item.timestamp);
+            const memoryValues = memoryData.map(item => item.value);
+            const memoryTimestamps = memoryData.map(item => item.timestamp);
+            const diskValues = diskData.map(item => item.value);
+            const diskTimestamps = diskData.map(item => item.timestamp);
+            const networkUploadValues = networkData.map(item => item.upload);
+            const networkDownloadValues = networkData.map(item => item.download);
+            const networkTimestamps = networkData.map(item => item.timestamp);
+
+            if (cpuChart) {
+                cpuChart.data.labels = cpuTimestamps;
+                cpuChart.data.datasets[0].data = cpuValues;
+                cpuChart.update();
+            }
+            if (memoryChart) {
+                memoryChart.data.labels = memoryTimestamps;
+                memoryChart.data.datasets[0].data = memoryValues;
+                memoryChart.update();
+            }
+            if (diskChart) {
+                diskChart.data.labels = diskTimestamps;
+                diskChart.data.datasets[0].data = diskValues;
+                diskChart.update();
+            }
+            if (networkChart) {
+                networkChart.data.labels = networkTimestamps;
+                networkChart.data.datasets[0].data = networkUploadValues; // Subida
+                networkChart.data.datasets[1].data = networkDownloadValues; // Bajada
+                networkChart.update();
+            }
+        }
+
+        // Inicializar los gráficos
+        const cpuChart = new Chart(document.getElementById('cpuChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Uso de CPU',
+                    data: [],
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    fill: true,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'category',
+                        title: {
+                            display: true,
+                            text: 'Tiempo',
+                            color: 'white'
+                        },
+                        ticks: {
+                            color: 'white'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    y: {
+                        min: 0,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Porcentaje (%)',
+                            color: 'white'
+                        },
+                        ticks: {
+                            color: 'white'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'white'
+                        }
+                    }
+                }
+            }
+        });
+
+        const memoryChart = new Chart(document.getElementById('memoryChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Uso de Memoria',
+                    data: [],
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    fill: true,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'category',
+                        title: {
+                            display: true,
+                            text: 'Tiempo',
+                            color: 'white'
+                        },
+                        ticks: {
+                            color: 'white'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    y: {
+                        min: 0,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Porcentaje (%)',
+                            color: 'white'
+                        },
+                        ticks: {
+                            color: 'white'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'white'
+                        }
+                    }
+                }
+            }
+        });
+
+        const diskChart = new Chart(document.getElementById('diskChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Uso de Disco',
+                    data: [],
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    fill: true,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'category',
+                        title: {
+                            display: true,
+                            text: 'Tiempo',
+                            color: 'white'
+                        },
+                        ticks: {
+                            color: 'white'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    y: {
+                        min: 0,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Porcentaje (%)',
+                            color: 'white'
+                        },
+                        ticks: {
+                            color: 'white'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'white'
+                        }
+                    }
+                }
+            }
+        });
+
+        const networkChart = new Chart(document.getElementById('networkChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Subida (Upload)',
+                        data: [],
+                        borderColor: 'rgba(255, 99, 132, 1)', // Rojo para subida
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        fill: true,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Bajada (Download)',
+                        data: [],
+                        borderColor: 'rgba(54, 162, 235, 1)', // Azul para bajada
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        fill: true,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'category',
+                        title: {
+                            display: true,
+                            text: 'Tiempo',
+                            color: 'white'
+                        },
+                        ticks: {
+                            color: 'white'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Bytes por segundo (B/s)',
+                            color: 'white'
+                        },
+                        ticks: {
+                            color: 'white',
+                            callback: function (value) {
+                                if (value >= 1000000) {
+                                    return (value / 1000000).toFixed(1) + ' MB/s';
+                                } else if (value >= 1000) {
+                                    return (value / 1000).toFixed(1) + ' KB/s';
+                                } else {
+                                    return value + ' B/s';
+                                }
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: 'white'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Actualizar datos y gráficos cada 5 segundos
+        setInterval(async () => {
+            const data = await fetchSystemStatus();
+            if (data) {
+                saveToLocalStorage(data);
+                updateCharts();
+            }
+        }, 5000);
+
+        // Llamar a la función una vez al cargar la página
+        fetchSystemStatus().then(data => {
+            if (data) {
+                saveToLocalStorage(data);
+                updateCharts();
+            }
+        });
+
+        // Funciones de red
+        async function fetchNetworkStatus() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/status/network`);
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error("Error fetching network status:", error);
+                return null;
+            }
+        }
+
+        function updateHeader(data) {
+            const networkIpElement = document.getElementById("networkIp");
+            const vpnIpElement = document.getElementById("vpnIp");
+
+            if (data.eth.connected) {
+                networkIpElement.textContent = `ETH: ${data.eth.ip}`;
+            } else if (data.wifi.connected) {
+                networkIpElement.textContent = `WiFi: ${data.wifi.ip}`;
+            } else {
+                networkIpElement.textContent = "ETH/WiFi: Desconectado";
+            }
+
+            if (data.vpn.connected) {
+                vpnIpElement.textContent = `VPN: ${data.vpn.ip}`;
+            } else {
+                vpnIpElement.textContent = "VPN: Desconectado";
+            }
+        }
+
+        function updateWifiIcon(signalStrength) {
+            const wifiIcon = document.getElementById("wifiIcon");
+
+            if (signalStrength === 0) {
+                // WiFi desconectado
+                wifiIcon.textContent = "wifi_off";
+                wifiIcon.style.color = "#dc3545"; // Rojo
+            } else if (signalStrength === 1) {
+                // Señal baja
+                wifiIcon.textContent = "wifi_1_bar";
+                wifiIcon.style.color = "#dc3545"; // Rojo
+            } else if (signalStrength === 2) {
+                // Señal media
+                wifiIcon.textContent = "wifi_2_bar";
+                wifiIcon.style.color = "#ffc107"; // Amarillo
+            } else if (signalStrength === 3) {
+                // Señal alta
+                wifiIcon.textContent = "wifi";
+                wifiIcon.style.color = "#28a745"; // Verde
+            } else if (signalStrength === 4) {
+                // Señal máxima (si existe en tu sistema)
+                wifiIcon.textContent = "wifi";
+                wifiIcon.style.color = "#28a745"; // Verde
+            } else {
+                // Valor inesperado
+                wifiIcon.textContent = "wifi_off";
+                wifiIcon.style.color = "#dc3545"; // Rojo
+            }
+        }
+
+        function updateIcons(data) {
+            const ethIcon = document.getElementById("ethIcon");
+            if (data.eth.connected) {
+                ethIcon.classList.remove("down");
+                ethIcon.classList.add("up");
+            } else {
+                ethIcon.classList.remove("up");
+                ethIcon.classList.add("down");
+            }
+
+            if (data.wifi.connected) {
+                updateWifiIcon(data.wifi.signal_strength);
+            } else {
+                updateWifiIcon(0);
+            }
+
+            const internetIcon = document.getElementById("internetIcon");
+            if (data.internet) {
+                internetIcon.classList.remove("down");
+                internetIcon.classList.add("up");
+            } else {
+                internetIcon.classList.remove("up");
+                internetIcon.classList.add("down");
+            }
+
+            const vpnIcon = document.getElementById("vpnIcon");
+            if (data.vpn.connected) {
+                vpnIcon.classList.remove("down");
+                vpnIcon.classList.add("up");
+            } else {
+                vpnIcon.classList.remove("up");
+                vpnIcon.classList.add("down");
+            }
+        }
+
+        function updateNetworkStatus(data) {
+            const ethStatus = document.getElementById("ethStatus");
+            if (data.eth.connected) {
+                ethStatus.textContent = `IP: ${data.eth.ip}`;
+            } else {
+                ethStatus.textContent = "Desconectado";
+            }
+
+            const wifiStatus = document.getElementById("wifiStatus");
+            const wifiSSID = document.getElementById("wifiSSID");
+            if (data.wifi.connected) {
+                wifiStatus.textContent = `IP: ${data.wifi.ip}`;
+                wifiSSID.textContent = `SSID: ${data.wifi.ssid || "Desconocido"}`;
+            } else {
+                wifiStatus.textContent = "Desconectado";
+                wifiSSID.textContent = "SSID: N/A";
+            }
+
+            const internetStatus = document.getElementById("internetStatus");
+            internetStatus.textContent = data.internet ? "Conectado" : "Sin acceso";
+
+            const vpnStatus = document.getElementById("vpnStatus");
+            if (data.vpn.connected) {
+                vpnStatus.textContent = `IP: ${data.vpn.ip}`;
+            } else {
+                vpnStatus.textContent = "Desconectado";
+            }
+
+            updateHeader(data);
+            updateIcons(data);
+
+            if (!data.internet) {
+                const noInternetModal = new bootstrap.Modal(document.getElementById('noInternetModal'));
+                noInternetModal.show();
+
+                setTimeout(() => {
+                    window.location.href = "/hotspot";
+                }, 5000);
+            }
+        }
+
+        // Actualizar los datos de la red cada 10 segundos
+        setInterval(async () => {
+            const networkData = await fetchNetworkStatus();
+            if (networkData) {
+                updateNetworkStatus(networkData);
+            }
+        }, 10000); // 10 segundos
+
+        // Llamar a la función una vez al cargar la página
+        fetchNetworkStatus().then(updateNetworkStatus);
+
+        // Funciones de rotación de contenedores
+        const containers = document.querySelectorAll('.transaction');
+        let currentIndex = 0;
+        const progressBar = document.getElementById('progressBar');
+        const totalTime = 5; // Tiempo total en segundos
+        let startTime = Date.now();
+        let isPaused = false; // Estado de pausa
+
+        function updateProgressBar() {
+            if (isPaused) return; // No actualizar si está en pausa
+
+            const elapsedTime = (Date.now() - startTime) / 1000; // Tiempo transcurrido en segundos
+            const progress = (elapsedTime / totalTime) * 100; // Progreso en porcentaje
+            progressBar.style.width = `${Math.min(progress, 100)}%`; // Asegura que no supere el 100%
+
+            if (elapsedTime >= totalTime) {
+                rotateContainers();
+                startTime = Date.now(); // Reinicia el tiempo
+            }
+            requestAnimationFrame(updateProgressBar); // Actualiza continuamente
+        }
+
+        function rotateContainers() {
+            containers[currentIndex].classList.remove('active');
+            currentIndex = (currentIndex + 1) % containers.length;
+            containers[currentIndex].classList.add('active');
+        }
+
+        // Pausar/reanudar la transición al hacer clic
+        document.addEventListener('click', function () {
+            isPaused = !isPaused; // Alternar estado de pausa
+            if (!isPaused) {
+                startTime = Date.now() - ((progressBar.style.width.replace('%', '') / 100) * totalTime * 1000); // Ajustar el tiempo de inicio
+                updateProgressBar(); // Reanudar la actualización
+            }
+        });
+
+        // Función para abrir el modal
+        function openServiceActionModal(serviceName) {
+            selectedService = serviceName; // Almacenar el servicio seleccionado
+            const modal = new bootstrap.Modal(document.getElementById('serviceActionModal'));
+            modal.show();
+        }
+
+        // Función para manejar la acción del servicio
+        async function handleServiceAction(action) {
+            if (!selectedService) return;
+
+            const modal = new bootstrap.Modal(document.getElementById('serviceActionModal')); // Obtener la instancia del modal
+
+            try {
+                let endpoint;
+                switch (action) {
+                    case 'restart':
+                        endpoint = 'restart';
+                        break;
+                    case 'stop':
+                        endpoint = 'stop';
+                        break;
+                    case 'start':
+                        endpoint = 'start';
+                        break;
+                    default:
+                        throw new Error('Acción no válida');
+                }
+
+                const response = await fetch(`${API_BASE_URL}/api/services/${selectedService}/${endpoint}`, {
+                    method: "POST",
+                });
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                const result = await response.json();
+                updateAllServicesStatus(); // Actualizar el estado de los servicios
+            } catch (error) {
+                console.error(`Error realizando la acción ${action} en el servicio ${selectedService}:`, error);
+            } finally {
+                modal.hide(); // Cerrar el modal después de realizar la acción
+                selectedService = null; // Limpiar el servicio seleccionado
+            }
+        }
+
+        // Función para formatear la fecha y hora en el formato "MMM-DD HH:mm"
+        function getFormattedDateTime() {
+            const now = new Date();
+            const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const month = months[now.getMonth()]; // Obtiene el nombre del mes
+            const day = String(now.getDate()).padStart(2, '0'); // Día con dos dígitos
+            const hours = String(now.getHours()).padStart(2, '0'); // Horas con dos dígitos
+            const minutes = String(now.getMinutes()).padStart(2, '0'); // Minutos con dos dígitos
+            return `${month}-${day} ${hours}:${minutes}`;
+        }
+
+        // Función para actualizar el elemento del DOM con la fecha y hora actual
+        function updateDateTime() {
+            const dateTimeElement = document.getElementById("currentDateTime");
+            if (dateTimeElement) {
+                dateTimeElement.textContent = getFormattedDateTime();
+            }
+        }
+
+        // Actualizar la fecha y hora cada minuto (60,000 milisegundos)
+        setInterval(updateDateTime, 1000);
+
+        // Llamar a la función una vez al cargar la página para establecer la fecha y hora inicial
+        updateDateTime();
+        updateProgressBar();
+    </script>
+</body>
+</html>
