@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Bootstrap CSS local -->
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <!-- Chart.js local -->
+    <script src="{{ url_for('static', filename='js/chart.umd.js') }}"></script>
+    <!-- Material Icons local -->
+    <link href="{{ url_for('static', filename='fonts/MaterialIcons-Regular.woff2') }}" rel="stylesheet">
+    <title>Estado de Red y Servicios</title>
+    <!-- Estilos locales -->
+    <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet">
+    <title>Conectar a WiFi</title>
+</head>
+<body class="p-1">
+    <!-- Barra superior -->
+    <div class="d-flex justify-content-center">
+        <p class="fw-lighter" id="currentDateTime"></p>
+    </div>
+
+    <!-- Lista de redes WiFi -->
+    <div class="container-sm">
+        <h4 class="mb-2">Redes WiFi Disponibles</h4>
+        <div id="wifiList">
+            <!-- Aquí se cargarán las redes WiFi dinámicamente -->
+        </div>
+        <div class="text-center mt-3" id="loadingCard">
+            <span class="material-symbols-outlined loading-icon">sync</span>
+            <p>Buscando redes...</p>
+        </div>
+        <div class="text-center mt-3" id="errorCard" style="display: none;">
+            <span class="material-symbols-outlined error-icon">error</span>
+            <p>Error al obtener redes WiFi. Inténtelo de nuevo.</p>
+        </div>
+    </div>
+
+    <!-- Formulario para ingresar la contraseña -->
+    <div class="container-sm form-container" id="passwordForm" style="display: none;">
+        <form id="wifiForm">
+            <input type="hidden" id="selectedSSID" name="ssid">
+            <div class="mb-3">
+                <label for="password" class="form-label">Ingrese la contraseña para conectarse a <strong id="selectedSSIDText"></strong></label>
+                <div class="password-input">
+                    <input type="password" class="form-control" id="password" name="password" required>
+                    <span class="material-symbols-outlined" onclick="togglePasswordVisibility()">visibility</span>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Conectar</button>
+            <button type="button" class="btn btn-secondary" onclick="resetForm()">Escanear de nuevo</button>
+        </form>
+    </div>
+
+    <!-- Modal para redes no admitidas -->
+    <div class="modal fade" id="unavailableModal" tabindex="-1" aria-labelledby="unavailableModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="unavailableModalLabel">Red no admitida</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Esta red no está admitida para conexión.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS local -->
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    <!-- Scripts de la aplicación -->
+    <script>
+        // URL base de la API y endpoints
+        const API_BASE_URL = `http://${window.location.hostname}:5000`; // URL base de la API
+        const API_ENDPOINTS = {
+            systemStatus: "/api/status/system", // Endpoint para el estado del sistema
+            networkStatus: "/api/status/network", // Endpoint para el estado de la red
+            wifiSearch: "/api/wifi/search", // Endpoint para buscar redes WiFi
+            wifiConnect: "/api/wifi/connect" // Endpoint para conectarse a una red WiFi
+        };
+
+        // Función para actualizar el ícono de WiFi según la fuerza de la señal
+        function updateWifiIcon(signalStrength) {
+            const wifiIcon = document.getElementById("wifiIcon");
+
+            if (signalStrength === 0) {
+                // WiFi desconectado
+                wifiIcon.textContent = "wifi_off";
+                wifiIcon.style.color = "#dc3545"; // Rojo
+            } else if (signalStrength === 1) {
+                // Señal baja
+                wifiIcon.textContent = "wifi_1_bar";
+                wifiIcon.style.color = "#dc3545"; // Rojo
+            } else if (signalStrength === 2) {
+                // Señal media
+                wifiIcon.textContent = "wifi_2_bar";
+                wifiIcon.style.color = "#ffc107"; // Amarillo
+            } else if (signalStrength === 3) {
+                // Señal alta
+                wifiIcon.textContent = "wifi";
+                wifiIcon.style.color = "#28a745"; // Verde
+            } else if (signalStrength === 4) {
+                // Señal máxima (si existe en tu sistema)
+                wifiIcon.textContent = "wifi";
+                wifiIcon.style.color = "#28a745"; // Verde
+            } else {
+                // Valor inesperado
+                wifiIcon.textContent = "wifi_off";
+                wifiIcon.style.color = "#dc3545"; // Rojo
+            }
+        }
+
+        // Función para renderizar la lista de redes WiFi
+        function renderWifiList(networks) {
+            const wifiList = document.getElementById("wifiList");
+            wifiList.innerHTML = ""; // Limpiar la lista
+
+            networks.forEach(network => {
+                const wifiContainer = document.createElement("div");
+                wifiContainer.className = "wifi-container d-flex justify-content-between align-items-center";
+
+                // Señal
+                const signal = document.createElement("span");
+                signal.className = "material-symbols-outlined signal-icon";
+                signal.textContent = "wifi"; // Ícono base
+                updateWifiIcon(network.signal_strength); // Actualizar ícono según la señal
+                wifiContainer.appendChild(signal);
+
+                // SSID
+                const ssid = document.createElement("p");
+                ssid.className = "fw-lighter";
+                ssid.textContent = network.ssid;
+                wifiContainer.appendChild(ssid);
+
+                // Seguridad
+                const security = document.createElement("span");
+                security.className = "material-symbols-outlined security-icon";
+                security.textContent = network.security === "open" ? "lock_open" : "lock";
+                wifiContainer.appendChild(security);
+
+                wifiList.appendChild(wifiContainer);
+
+                // Evento de clic para mostrar el formulario o el modal
+                wifiContainer.addEventListener("click", () => {
+                    if (network.security === "open") {
+                        // Mostrar modal para redes no admitidas
+                        const modal = new bootstrap.Modal(document.getElementById("unavailableModal"));
+                        modal.show();
+                        setTimeout(() => modal.hide(), 5000); // Ocultar después de 5 segundos
+                    } else {
+                        // Mostrar formulario para redes admitidas
+                        document.getElementById("selectedSSID").value = network.ssid;
+                        document.getElementById("selectedSSIDText").textContent = network.ssid;
+                        document.getElementById("wifiList").style.display = "none";
+                        document.getElementById("passwordForm").style.display = "block";
+                        document.getElementById("loadingCard").style.display = "none";
+                    }
+                });
+            });
+        }
+
+        // Función para alternar la visibilidad de la contraseña
+        function togglePasswordVisibility() {
+            const passwordInput = document.getElementById("password");
+            const icon = document.querySelector(".password-input .material-symbols-outlined");
+            if (passwordInput.type === "password") {
+                passwordInput.type = "text";
+                icon.textContent = "visibility_off";
+            } else {
+                passwordInput.type = "password";
+                icon.textContent = "visibility";
+            }
+        }
+
+        // Función para cargar las redes WiFi desde la API
+        async function loadWifiNetworks() {
+            try {
+                // Mostrar el mensaje de carga
+                document.getElementById("loadingCard").style.display = "block";
+                document.getElementById("errorCard").style.display = "none";
+
+                const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.wifiSearch}`);
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                const networks = await response.json();
+
+                // Ocultar el mensaje de carga y mostrar las redes
+                document.getElementById("loadingCard").style.display = "none";
+                renderWifiList(networks);
+            } catch (error) {
+                console.error("Error cargando redes WiFi:", error);
+                // Mostrar mensaje de error
+                document.getElementById("loadingCard").style.display = "none";
+                document.getElementById("errorCard").style.display = "block";
+            }
+        }
+
+        // Función para resetear el formulario y volver a escanear
+        function resetForm() {
+            document.getElementById("wifiList").style.display = "block";
+            document.getElementById("passwordForm").style.display = "none";
+            document.getElementById("loadingCard").style.display = "block";
+            document.getElementById("errorCard").style.display = "none";
+            loadWifiNetworks();
+        }
+
+        // Función para formatear la fecha y hora en el formato "MMM-DD HH:mm"
+        function getFormattedDateTime() {
+            const now = new Date();
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const month = months[now.getMonth()]; // Obtiene el nombre del mes
+            const day = String(now.getDate()).padStart(2, '0'); // Día con dos dígitos
+            const hours = String(now.getHours()).padStart(2, '0'); // Horas con dos dígitos
+            const minutes = String(now.getMinutes()).padStart(2, '0'); // Minutos con dos dígitos
+            return `${month}-${day} ${hours}:${minutes}`;
+        }
+
+        // Función para actualizar el elemento del DOM con la fecha y hora actual
+        function updateDateTime() {
+            const dateTimeElement = document.getElementById("currentDateTime");
+            if (dateTimeElement) {
+                dateTimeElement.textContent = getFormattedDateTime();
+            }
+        }
+
+        // Actualizar la fecha y hora cada minuto (60,000 milisegundos)
+        setInterval(updateDateTime, 1000);
+
+        // Llamar a la función una vez al cargar la página para establecer la fecha y hora inicial
+        updateDateTime();
+
+        // Cargar las redes WiFi al cargar la página
+        loadWifiNetworks();
+
+        // Manejar el envío del formulario
+        document.getElementById("wifiForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const ssid = document.getElementById("selectedSSID").value;
+            const password = document.getElementById("password").value;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.wifiConnect}`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ ssid, password }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+
+                const result = await response.json();
+                alert(`Conectado a ${ssid}: ${result.message}`);
+                window.location.href = "https://www.google.com"; // Redirigir a la página principal
+            } catch (error) {
+                console.error("Error conectando a la red WiFi:", error);
+                alert("Error al conectarse a la red WiFi. Inténtelo de nuevo.");
+            }
+        });
+    </script>
+</body>
+</html>
